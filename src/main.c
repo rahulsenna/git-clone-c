@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <openssl/sha.h>
 #include <dirent.h>
+#include <time.h>
 
 void hexdump(const void* data, size_t size)
 {
@@ -276,6 +277,33 @@ int main(int argc, char* argv[])
   else if (strcmp(command, "write-tree") == 0)
   {
     print_hash(create_tree("."));
+  }
+  else if (strcmp(command, "commit-tree") == 0)
+  {
+    char* tree = argv[2];
+    char* parent = argv[4];
+    char* message = argv[6];
+
+    char tz[6];
+    time_t ts = time(0);
+    struct tm* local = localtime(&ts);
+    snprintf(tz, sizeof(tz), "%+03ld%02ld", local->tm_gmtoff / 3600, labs(local->tm_gmtoff % 3600) / 60);
+
+    char commit_buf[1024];
+
+    size_t commit_buf_len = snprintf(commit_buf, sizeof(commit_buf),
+      "tree %s\n"
+      "parent %s\n"
+      "author Tom Baray <tom@patriots.com> %ld %s\n"
+      "committer Tom Baray <tom@patriots.com> %ld %s\n"
+      "\n"
+      "%s\n", tree, parent, ts, tz, ts, tz, message);
+
+    char commit_blob[1024];
+    size_t header_len = snprintf(commit_blob, sizeof(commit_blob), "commit %zu", commit_buf_len);
+    memcpy(commit_blob + header_len + 1, commit_buf, commit_buf_len);
+
+    print_hash(write_object(commit_blob, commit_buf_len + header_len + 1));
   }
   else
   {
