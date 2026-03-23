@@ -60,6 +60,25 @@ void hexdump(const void* data, size_t size)
 }
 
 
+int get_uncompressed(const char* object_id, uint8_t *output, size_t *out_len)
+{
+  const char* filename = object_id + 2;
+  char path[256];
+  snprintf(path, sizeof(path), ".git/objects/%.*s/%s", 2, object_id, filename);
+
+  FILE* fd = fopen(path, "rb");;
+  uint8_t compressed[1024 * 4];
+  size_t bytes_read = fread(compressed, sizeof(uint8_t), 1024 * 4, fd);
+  fclose(fd);
+
+  int ret = uncompress(output, out_len, (const Bytef*) compressed, (uLong) bytes_read);
+  if (ret == Z_OK)
+  {
+    return 1;
+  }
+  return 0;
+}
+
 int main(int argc, char* argv[])
 {
   // Disable output buffering
@@ -100,25 +119,15 @@ int main(int argc, char* argv[])
   } 
   else if (strcmp(command, "cat-file") == 0)
   {
-    char* object_id = argv[3];
-    char* hash = object_id+2;
-    char path[256];
-    snprintf(path, sizeof(path), ".git/objects/%.*s/%s", 2, object_id, hash);
-
-    FILE *fd = fopen(path, "rb");;
-    uint8_t compressed[1024*4];
-    size_t bytes_read = fread(compressed, sizeof(uint8_t), 1024 * 4, fd);
-    fclose(fd);
-
-    uLongf out_len = 1024 * 64;
-    uint8_t output[out_len];
-    int ret = uncompress(output, &out_len, (const Bytef*) compressed, (uLong) bytes_read);
-    if (ret == Z_OK)
+    size_t data_len = 1024 * 64;
+    uint8_t* data = (uint8_t*)malloc(data_len);
+    if (get_uncompressed(argv[3], data, &data_len))
     {
-      hexdump(output, out_len);
-      const char* nullbyte = strchr((const char*) output, 0);
+      hexdump(data, data_len);
+      const char* nullbyte = strchr((const char*) data, 0);
       printf("%s", (char*)nullbyte+1);
     }
+    free(data);
   }
   else if (strcmp(command, "hash-object") == 0)
   {
@@ -163,6 +172,26 @@ int main(int argc, char* argv[])
     }
     free(blob);
     free(compressed);
+  }
+  else if (strcmp(command, "ls-tree") == 0)
+  {
+    size_t data_len = 1024 * 64;
+    uint8_t* data = (uint8_t*) malloc(data_len);
+    if (!get_uncompressed(argv[3], data, &data_len))
+    {
+      free(data);
+      return 0;
+    }
+
+    const char* cursor = strchr((const char*) data, 0) + 1;
+    char* end = (char*) data + data_len;
+    while (cursor < end)
+    {
+      char* name = strchr((const char*) cursor, ' ') + 1;
+      cursor = strchr((const char*) name, 0) + 21;
+      printf("%s\n", name);
+    }
+    free(data);
   }
   else
   {
