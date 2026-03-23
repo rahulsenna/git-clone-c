@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <zlib.h>
 #include <ctype.h>
+#include <openssl/sha.h>
 
 void hexdump(const void* data, size_t size)
 {
@@ -118,6 +119,50 @@ int main(int argc, char* argv[])
       const char* nullbyte = strchr((const char*) output, 0);
       printf("%s", (char*)nullbyte+1);
     }
+  }
+  else if (strcmp(command, "hash-object") == 0)
+  {
+    char* file_name = argv[3];
+    FILE* fd = fopen(file_name, "rb");
+    fseek(fd, 0, SEEK_END);
+    size_t file_size = ftell(fd);
+    fseek(fd, 0, SEEK_SET);
+
+    char header[64];
+    size_t header_len = snprintf(header, sizeof(header), "blob %zu", file_size);
+    size_t blob_size = file_size + header_len + 1;
+    uint8_t* blob = (uint8_t*) malloc(blob_size);
+    memcpy(blob, header, header_len + 1);
+    size_t bytes_read = fread(blob + header_len + 1, sizeof(uint8_t), file_size, fd);
+    fclose(fd);
+
+    uLongf compressed_len = compressBound(blob_size);
+    uint8_t* compressed = (uint8_t*) malloc(compressed_len);
+    int ret = compress2(compressed, &compressed_len, (const Bytef*) blob, (uLong) blob_size, Z_DEFAULT_COMPRESSION);
+    if (ret == Z_OK)
+    {
+      unsigned char hash[SHA_DIGEST_LENGTH];
+      SHA1(blob, blob_size, hash);
+
+      char hash_str[SHA_DIGEST_LENGTH * 2 + 1];
+      for (int i = 0; i < SHA_DIGEST_LENGTH; i++)
+        sprintf(hash_str + i * 2, "%02x", hash[i]);
+
+      printf("%s\n", hash_str);
+
+      char dir_path[256];
+      snprintf(dir_path, sizeof(dir_path), ".git/objects/%.*s", 2, hash_str);
+      mkdir(dir_path, 0755);
+      char file_path[256];
+      snprintf(file_path, sizeof(file_path), "%s/%s", dir_path, hash_str + 2);
+
+
+      FILE* fd = fopen(file_path, "wb");;
+      size_t bytes_written = fwrite(compressed, sizeof(uint8_t), compressed_len, fd);
+      fclose(fd);
+    }
+    free(blob);
+    free(compressed);
   }
   else
   {
