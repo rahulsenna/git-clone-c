@@ -3,6 +3,61 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <zlib.h>
+#include <ctype.h>
+
+void hexdump(const void* data, size_t size)
+{
+  const unsigned char* byte = (const unsigned char*) data;
+  char buffer[4096];
+  size_t buf_used = 0;
+  size_t i, j;
+
+  for (i = 0; i < size; i += 16)
+  {
+    char line[80];  // A line won't exceed 80 chars
+    int len = snprintf(line, sizeof(line), "%08zx  ", i);
+
+    // Hex part
+    for (j = 0; j < 16; j++)
+    {
+      if (i + j < size)
+        len += snprintf(line + len, sizeof(line) - len, "%02x ", byte[i + j]);
+      else
+        len += snprintf(line + len, sizeof(line) - len, "   ");
+      if (j == 7)
+        len += snprintf(line + len, sizeof(line) - len, " ");
+    }
+
+    // ASCII part
+    len += snprintf(line + len, sizeof(line) - len, " |");
+    for (j = 0; j < 16 && i + j < size; j++)
+    {
+      unsigned char ch = byte[i + j];
+      len += snprintf(line + len, sizeof(line) - len, "%c", isprint(ch) ? ch : '.');
+    }
+    len += snprintf(line + len, sizeof(line) - len, "|\n");
+
+    // Append line to buffer
+    if (buf_used + len < sizeof(buffer))
+    {
+      memcpy(buffer + buf_used, line, len);
+      buf_used += len;
+    } else
+    {
+      // Prevent buffer overflow
+      break;
+    }
+  }
+
+  // Null-terminate and print once
+  buffer[buf_used] = '\0';
+  fprintf(stderr, "Idx       | Hex                                             | ASCII\n"
+                  "----------+-------------------------------------------------+-----------------\n"
+    "%s",
+    buffer);
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -41,7 +96,30 @@ int main(int argc, char* argv[])
     fclose(headFile);
 
     printf("Initialized git directory\n");
-  } else
+  } 
+  else if (strcmp(command, "cat-file") == 0)
+  {
+    char* object_id = argv[3];
+    char* hash = object_id+2;
+    char path[256];
+    snprintf(path, sizeof(path), ".git/objects/%.*s/%s", 2, object_id, hash);
+
+    FILE *fd = fopen(path, "rb");;
+    uint8_t compressed[1024*4];
+    size_t bytes_read = fread(compressed, sizeof(uint8_t), 1024 * 4, fd);
+    fclose(fd);
+
+    uLongf out_len = 1024 * 64;
+    uint8_t output[out_len];
+    int ret = uncompress(output, &out_len, (const Bytef*) compressed, (uLong) bytes_read);
+    if (ret == Z_OK)
+    {
+      hexdump(output, out_len);
+      const char* nullbyte = strchr((const char*) output, 0);
+      printf("%s", (char*)nullbyte+1);
+    }
+  }
+  else
   {
     fprintf(stderr, "Unknown command %s\n", command);
     return 1;
