@@ -13,3 +13,4 @@ add_executable(git ${SOURCE_FILES})
 
 target_link_libraries(git PRIVATE OpenSSL::Crypto)
 target_link_libraries(git PRIVATE ZLIB::ZLIB)
+target_link_libraries(git PRIVATE curl)

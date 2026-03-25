@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${default}",
+                "/opt/homebrew/opt/openssl/include"
+              ],
+            "defines": [],
+            "intelliSenseMode": "macos-clang-arm64"
+        }
+    ],
+    "version": 4
+}
