@@ -81,7 +81,7 @@ BYTES get_uncompressed(const char* object_id)
   if (!fd)
   {
     fprintf(stderr, "get_uncompressed: cannot open %s\n", path);
-    return (BYTES){0};
+    return (BYTES) { 0 };
   }
   fseek(fd, 0, SEEK_END);
   size_t file_size = ftell(fd);
@@ -201,11 +201,11 @@ uint8_t* create_tree(char* root_path)
     uint8_t* hash = 0;
     if (entry->d_type == DT_DIR)
     {
-      cursor += snprintf(cursor, 256, "40000 %s", entry->d_name) + 1;
+      cursor += snprintf((char*) cursor, 256, "40000 %s", entry->d_name) + 1;
       hash = create_tree(path);
     } else if (entry->d_type == DT_REG)
     {
-      cursor += snprintf(cursor, 256, "100644 %s", entry->d_name) + 1;
+      cursor += snprintf((char*) cursor, 256, "100644 %s", entry->d_name) + 1;
       hash = create_object(path);
     }
     if (hash)
@@ -263,7 +263,7 @@ static size_t write_cb(void* src, size_t size, size_t nmemb, void* userp)
 {
   size_t new_bytes = size * nmemb;
   BYTES* buf = (BYTES*) userp;
-  buf->data = realloc(buf->data, buf->len + new_bytes + 1);
+  buf->data = (uint8_t*) realloc(buf->data, buf->len + new_bytes + 1);
   memcpy(buf->data + buf->len, src, new_bytes);
   buf->len += new_bytes;
   buf->data[buf->len] = 0;
@@ -312,7 +312,7 @@ BYTES fetch_pack_file_git_protocol_1(char* git_url)
   snprintf(full_url, sizeof(full_url), "%s/info/refs?service=git-upload-pack", git_url);
 
   BYTES res = http_request(full_url, 0, 0, 0);
-  char* head_sha1 = res.data + 38;
+  char* head_sha1 = (char*) res.data + 38;
   mkdir(".git/refs/heads", 0755);
 
   FILE* fd = fopen(".git/refs/heads/master", "wb");
@@ -323,7 +323,7 @@ BYTES fetch_pack_file_git_protocol_1(char* git_url)
   size_t body_len = snprintf(body, sizeof(body), "0032want %.*s\n00000009done\n", 40, head_sha1);
 
   snprintf(full_url, sizeof(full_url), "%s/git-upload-pack", git_url);
-  BYTES res2 = http_request(full_url, 0, body, body_len);
+  BYTES res2 = http_request(full_url, 0, (uint8_t*) body, body_len);
 
   free(res.data);
   curl_global_cleanup();
@@ -382,7 +382,7 @@ BYTES inflate_object(uint8_t* cursor, size_t expected_size, size_t* consumed)
     free(out);
     return (BYTES) { 0 };
   }
-  
+
   BYTES res = { 0 };
   res.data = out;
   res.len = expected_size;
@@ -559,12 +559,12 @@ void unpack_packfile(uint8_t* pack_data)
         if (!base_obj.data)
           break;
 
-        char* nullbyte = strchr((const char*) base_obj.data, 0);
+        const char* nullbyte = strchr((const char*) base_obj.data, 0);
         base_obj.len -= (size_t) ((uint8_t*) nullbyte - base_obj.data) + 1;
 
 
-        char* type_str = base_obj.data;
-        GitObjectType base_object_type = 0;
+        char* type_str = (char*) base_obj.data;
+        GitObjectType base_object_type = (GitObjectType) 0;
         if (strncmp(type_str, "commit", strlen("commit")) == 0)
           base_object_type = Commit;
         else if (strncmp(type_str, "blob", strlen("blob")) == 0)
@@ -574,7 +574,7 @@ void unpack_packfile(uint8_t* pack_data)
         else if (strncmp(type_str, "tag", strlen("tag")) == 0)
           base_object_type = Tag;
 
-        BYTES base_object = { nullbyte + 1, base_obj.len };
+        BYTES base_object = { (uint8_t*) nullbyte + 1, base_obj.len };
         BYTES reconstructedObject = apply_delta(base_object, 0, delta);
         process_objects(base_object_type, reconstructedObject);
         free(delta.data);
@@ -601,15 +601,15 @@ void load_tree(char* tree_id, char* path)
   BYTES tree = get_uncompressed(tree_id);
   if (tree.data == NULL) return;
 
-  char* cursor = strchr((const char*) tree.data, 0) + 1;
+  const char* cursor = strchr((const char*) tree.data, 0) + 1;
   char* end = (char*) tree.data + tree.len;
   while (cursor < end)
   {
-    char* mode = cursor;
-    char* name = strchr((const char*) cursor, ' ') + 1;
+    char* mode = (char*) cursor;
+    const char* name = strchr((const char*) cursor, ' ') + 1;
     cursor = strchr((const char*) name, 0) + 1;
     char object_id[SHA1_STR_LEN];
-    hash_to_str(cursor, object_id);
+    hash_to_str((uint8_t*) cursor, object_id);
     cursor += 20;
 
     char fullpath[256];
@@ -629,7 +629,7 @@ void load_tree(char* tree_id, char* path)
         return;
       }
       BYTES file = get_uncompressed(object_id);
-      uint8_t* content_ptr = strchr(file.data, 0) + 1;
+      uint8_t* content_ptr = (uint8_t*) strchr((char*) file.data, 0) + 1;
       file.len -= (size_t) (content_ptr - file.data);
       size_t bytes_written = fwrite(content_ptr, sizeof(uint8_t), file.len, fd);
       fclose(fd);
@@ -648,13 +648,13 @@ void load_git_objects()
   fclose(fd);
 
   BYTES commit = get_uncompressed(head_commit_id);
-  char* commit_start = strchr(commit.data, 0) + 1;
+  char* commit_start = strchr((char*) commit.data, 0) + 1;
 
   char* tree_id_ptr = strstr(commit_start, "tree ") + 5;
   char tree_id[SHA1_STR_LEN];
   snprintf(tree_id, sizeof(tree_id), "%s", tree_id_ptr);
 
-  load_tree(tree_id, ".");
+  load_tree(tree_id, (char*) ".");
   free(commit.data);
 }
 
@@ -692,48 +692,44 @@ int main(int argc, char* argv[])
   {
     git_init();
     printf("Initialized git directory\n");
-  } 
-  else if (strcmp(command, "cat-file") == 0)
+  } else if (strcmp(command, "cat-file") == 0)
   {
     BYTES git_obj = get_uncompressed(argv[3]);
     if (git_obj.data != NULL)
     {
       const char* nullbyte = strchr((const char*) git_obj.data, 0);
-      printf("%s", (char*)nullbyte+1);
+      git_obj.data[git_obj.len] = 0;
+      printf("%s", (char*) nullbyte + 1);
     }
     free(git_obj.data);
-  }
-  else if (strcmp(command, "hash-object") == 0)
+  } else if (strcmp(command, "hash-object") == 0)
   {
     print_hash(create_object(argv[3]));
-  }
-  else if (strcmp(command, "ls-tree") == 0)
+  } else if (strcmp(command, "ls-tree") == 0)
   {
     BYTES git_obj = get_uncompressed(argv[3]);
     if (git_obj.data == NULL)
       return 0;
-    
+
     const char* cursor = strchr((const char*) git_obj.data, 0) + 1;
     char* end = (char*) git_obj.data + git_obj.len;
     while (cursor < end)
     {
-      char* name = strchr((const char*) cursor, ' ') + 1;
+      const char* name = strchr((const char*) cursor, ' ') + 1;
       cursor = strchr((const char*) name, 0) + 21;
       printf("%s\n", name);
     }
     free(git_obj.data);
-  }
-  else if (strcmp(command, "write-tree") == 0)
+  } else if (strcmp(command, "write-tree") == 0)
   {
-    print_hash(create_tree("."));
-  }
-  else if (strcmp(command, "commit-tree") == 0)
+    print_hash(create_tree((char*) "."));
+  } else if (strcmp(command, "commit-tree") == 0)
   {
     char* tree = argv[2];
     char* parent = argv[4];
     char* message = argv[6];
 
-    char tz[6];
+    char tz[7];
     time_t ts = time(0);
     struct tm* local = localtime(&ts);
     snprintf(tz, sizeof(tz), "%+03ld%02ld", local->tm_gmtoff / 3600, labs(local->tm_gmtoff % 3600) / 60);
@@ -752,16 +748,14 @@ int main(int argc, char* argv[])
     size_t header_len = snprintf(commit_blob, sizeof(commit_blob), "commit %zu", commit_buf_len);
     memcpy(commit_blob + header_len + 1, commit_buf, commit_buf_len);
 
-    print_hash(write_object(commit_blob, commit_buf_len + header_len + 1));
-  }
-  else if (strcmp(command, "clone") == 0)
+    print_hash(write_object((uint8_t*) commit_blob, commit_buf_len + header_len + 1));
+  } else if (strcmp(command, "clone") == 0)
   {
     char* url = argv[2];
     char* save_dir = argv[3];
-    
+
     git_clone(url, save_dir);
-  }
-  else
+  } else
   {
     fprintf(stderr, "Unknown command %s\n", command);
     return 1;
